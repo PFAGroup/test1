@@ -1,0 +1,361 @@
+# ftp-tnt
+#----------------------------------------------
+# Verwerking :
+#               1. Overzetten XML bestanden naar TNT....
+#
+# date  : 20-2-2012
+# author: Pieter Mastenbroek
+# modifications:
+# date        by                    remarks
+# 8-1-2013    pieter Mastenbroek    FTP bleef hangen, nu ingebouwd dat FTP op de achtergront word gestart (met &)
+#                                   Daarna een controle tot max 1000 seconden of FTP nog draait, daarna killen en verder gaan.
+
+
+. /progress/pf/scripts/PFCRON.profile
+
+datum=`date +"%y.%m.%d %H:%M:%S - "`
+dag=`date +"%y%m%d"`
+SCRIPTNAAM=ftp-tnt
+
+current=`pwd`
+
+echo "$datum BEGIN $SCRIPTNAAM" >> $LOGFILE
+
+#*************************************
+# systeemvariabelen (shared)
+#*************************************
+
+if [ -z "$LOGFILE" ]
+        then
+        LOGFILE=/progress/pf/nachtwerk.log
+        export LOGFILE
+fi
+if [ -z "$WORKDIR" ]
+        then
+        echo "$datum 	variable WORKDIR niet gevuld in profile" >> $LOGFILE
+        cd $current
+        exit 1
+fi
+
+
+# ------------------------------------------------------------------------
+# ITM*.xml bestanden overzetten naar de TNT server
+# ------------------------------------------------------------------------
+PUTFILE=/progress/pf/scripts/ftp-putfiles-generate
+TMPLOGFILE=$WORKDIR/TNT/ftp.log
+cd $WORKDIR/TNT/out
+
+datum=`date +"%y.%m.%d %H:%M:%S - "`
+echo "$datum       Start FTP ITM*.xml bestanden " >> $LOGFILE
+
+
+for i in `ls ITM*.xml`
+do
+    a=1
+    while [ $a -le 5 ]
+    do
+        echo "# scripts is gegenereerd !!"            >  $PUTFILE
+        echo "epsv4 on"                               >> $PUTFILE
+        echo "asc"                                    >> $PUTFILE
+        echo "passive off"                            >> $PUTFILE
+        echo "case off"                               >> $PUTFILE
+        echo "cd in"                                  >> $PUTFILE
+        echo "lcd $WORKDIR/TNT/out"                   >> $PUTFILE
+        echo "prompt "                                >> $PUTFILE
+        echo "mput $i"                                >> $PUTFILE
+        echo "lcd /progress/pf/scripts/"              >> $PUTFILE
+        echo "mput ftp.oke"                           >> $PUTFILE
+        echo "lcd $WORKDIR/TNT/out"                   >> $PUTFILE
+        echo "mget ftp.oke"                           >> $PUTFILE
+        echo "mdelete ftp.oke"                        >> $PUTFILE
+        echo "bye"                                    >> $PUTFILE
+
+        ftp -v -d ftp.tnt < $PUTFILE  > $TMPLOGFILE  &
+         ######################################
+         # Controle of het FTP commando nog draait, na 1000 sec doorgaan en huidige killen.
+         ######################################
+          a=1
+         while [ $a -le 1000 ]
+           do
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt" |grep -v grep `
+             if  [ -n "$FTPACTIEF" ] 
+              then
+               echo $i "FTP is actief dus wachten max 1000 seconden"
+               echo $a
+               a=`expr $a + 1`
+               sleep 1
+              else
+               echo $i "FTP is klaar"
+               echo $a
+               a=`expr $a + 1000`
+               sleep 1
+             fi
+         done
+         
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt"  |grep -v grep | awk '{print $1}' `
+             if  [ -n "$FTPACTIEF" ] 
+              then 
+              echo "FTP van bestand " $i "is niet gelukt, process afbreken." >> $LOGFILE
+              kill $FTPACTIEF
+             fi
+
+        ######################################
+        # controle of FTP goed is gegaan.
+        ######################################
+
+        datum=`date +"%y.%m.%d %H:%M:%S - "`
+        if [ `ls -l $i| awk '{print $5}'` -le `cat $TMPLOGFILE | grep -m1 sent |awk '{print $1}'` ]
+          then
+               if [ -e ftp.oke ]
+                 then
+                   cat $TMPLOGFILE >> $LOGFILE
+                   echo "$datum       TNT file $i verplatst naar backupdir $WORKDIR/TNT/out/save" >> $LOGFILE
+                   mv $i $WORKDIR/TNT/out/save 2>> $LOGFILE
+                   rm ftp.oke
+                   a=`expr $a + 5`
+                 else
+                   cat $TMPLOGFILE >> $LOGFILE
+                   echo "$datum       TNT file $i ftp niet gelukt, nogmaals proberen poging $a" >> $LOGFILE
+                   a=`expr $a + 1`
+                   #sleep 60
+                   echo sleep 1
+                   sleep 1
+               fi
+          else
+               cat $TMPLOGFILE >> $LOGFILE
+               echo "$datum       TNT file $i ftp niet gelukt, nogmaals proberen (60 sec) poging $a" >> $LOGFILE
+               a=`expr $a + 1`
+               #sleep 60
+               sleep 1
+        fi
+    done
+done
+# ------------------------------------------------------------------------
+# .xml bestanden overzetten naar de TNT server
+# ------------------------------------------------------------------------
+PUTFILE=/progress/pf/scripts/ftp-putfiles-generate
+TMPLOGFILE=$WORKDIR/TNT/ftp.log
+cd $WORKDIR/TNT/out
+
+datum=`date +"%y.%m.%d %H:%M:%S - "`
+echo "$datum       Start FTP overige (*.xml) bestanden " >> $LOGFILE
+
+for i in `ls *.xml`
+do
+    a=1
+    while [ $a -le 5 ]
+    do
+        echo "# scripts is gegenereerd !!"            >  $PUTFILE
+        echo "epsv4 on"                               >> $PUTFILE
+        echo "asc"                                    >> $PUTFILE
+        echo "passive off"                            >> $PUTFILE
+        echo "case off"                               >> $PUTFILE
+        echo "cd in"                                  >> $PUTFILE
+        echo "lcd $WORKDIR/TNT/out"                   >> $PUTFILE
+        echo "prompt "                                >> $PUTFILE
+        echo "mput $i"                                >> $PUTFILE
+        echo "lcd /progress/pf/scripts/"              >> $PUTFILE
+        echo "mput ftp.oke"                           >> $PUTFILE
+        echo "lcd $WORKDIR/TNT/out"                   >> $PUTFILE
+        echo "mget ftp.oke"                           >> $PUTFILE
+        echo "mdelete ftp.oke"                        >> $PUTFILE
+        echo "bye"                                    >> $PUTFILE
+
+        ftp -v -d ftp.tnt < $PUTFILE  > $TMPLOGFILE &
+         ######################################
+         # Controle of het FTP commando nog draait, na 1000 sec doorgaan en huidige killen.
+         ######################################
+          a=1
+         while [ $a -le 1000 ]
+           do
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt" |grep -v grep `
+             if  [ -n "$FTPACTIEF" ]
+              then
+               echo $i "FTP is actief dus wachten max 1000 seconden"
+               echo $a
+               a=`expr $a + 1`
+               sleep 1
+              else
+               echo $i "FTP is klaar"
+               echo $a
+               a=`expr $a + 1000`
+               sleep 1
+             fi
+         done
+
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt"  |grep -v grep | awk '{print $1}' `
+             if  [ -n "$FTPACTIEF" ]
+              then
+              echo "FTP van bestand " $i "is niet gelukt, process afbreken." >> $LOGFILE
+              kill $FTPACTIEF
+             fi
+
+        ######################################
+        # controle of FTP goed is gegaan.
+        ######################################
+
+        datum=`date +"%y.%m.%d %H:%M:%S - "`
+        if [ `ls -l $i| awk '{print $5}'` -le `cat $TMPLOGFILE | grep -m1 sent |awk '{print $1}'` ]
+          then
+               if [ -e ftp.oke ]
+                 then
+                   cat $TMPLOGFILE >> $LOGFILE
+                   echo "$datum       TNT file $i verplaatst naar backupdir $WORKDIR/TNT/out/save" >> $LOGFILE
+                   mv $i $WORKDIR/TNT/out/save  2>> $LOGFILE
+                   rm ftp.oke
+                   a=`expr $a + 5`
+                 else
+                   cat $TMPLOGFILE >> $LOGFILE
+                   echo "$datum       TNT file $i ftp niet gelukt, nogmaals proberen poging $a" >> $LOGFILE
+                   a=`expr $a + 1`
+                   #sleep 60
+                   echo sleep 1
+                   sleep 1
+               fi
+          else
+               cat $TMPLOGFILE >> $LOGFILE
+               echo "$datum       TNT file $i ftp niet gelukt, nogmaals proberen (60 sec) poging $a" >> $LOGFILE
+               a=`expr $a + 1`
+               #sleep 60
+               sleep 1
+        fi
+    done
+done
+
+
+# ------------------------------------------------------------------------
+# lijst maken met bestanden die moeten worden opgehaald van de TNT server
+# ------------------------------------------------------------------------
+cd $WORKDIR/TNT
+GETLIST=$WORKDIR/TNT/ftp-tnt-getlist
+FTPLIST=$WORKDIR/TNT/ftp-tnt-ftplist
+
+datum=`date +"%y.%m.%d %H:%M:%S - "`
+echo "$datum       Start FTP ophalen bestanden lijst" >> $LOGFILE
+
+        echo "# scripts is gegenereerd !!"            >  $GETLIST
+        echo "cd out"                                 >> $GETLIST
+        echo "ls"                                     >> $GETLIST
+        echo "by"                                     >> $GETLIST
+
+ftp -v -d ftp.tnt < $GETLIST > $FTPLIST &
+######################################
+# Controle of het FTP commando nog draait, na 1000 sec doorgaan en huidige killen.
+######################################
+ a=1
+while [ $a -le 1000 ]
+  do
+    FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt" |grep -v grep `
+    if  [ -n "$FTPACTIEF" ]
+     then
+      echo $i "FTP is actief dus wachten max 1000 seconden"
+      echo $a
+      a=`expr $a + 1`
+      sleep 1
+     else
+      echo $i "FTP is klaar"
+      echo $a
+      a=`expr $a + 1000`
+      sleep 1
+    fi
+done
+
+    FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt"  |grep -v grep | awk '{print $1}' `
+    if  [ -n "$FTPACTIEF" ]
+     then
+     echo "FTP van bestand " $i "is niet gelukt, process afbreken." >> $LOGFILE
+     kill $FTPACTIEF
+    fi
+
+# ------------------------------------------------------------------------
+# Bestanden ophalen van FTP server TNT
+# ------------------------------------------------------------------------
+GETFILE=/progress/pf/scripts/ftp-getfiles-generate
+
+datum=`date +"%y.%m.%d %H:%M:%S - "`
+echo "$datum       Start FTP ophalen bestanden " >> $LOGFILE
+
+for i in `cat  $FTPLIST |grep xml | awk '{print $9}'`
+do
+    a=1
+    while [ $a -le 5 ]
+    do
+        echo "# scripts is gegenereerd !!"            >  $GETFILE
+        echo "epsv4 on"                               >> $GETFILE
+        echo "asc"                                    >> $GETFILE
+        echo "passive off"                            >> $GETFILE
+        echo "case off"                               >> $GETFILE
+        echo "prompt "                                >> $GETFILE
+        echo "cd out"                                 >> $GETFILE
+        echo "lcd /progress/pf/scripts/"              >> $GETFILE
+        echo "mput ftp.oke"                           >> $GETFILE
+        echo "lcd $WORKDIR/TNT/in"                    >> $GETFILE
+        echo "mget $i"                                >> $GETFILE
+        echo "rename $i archive/$i"                   >> $GETFILE
+        echo "mget ftp.oke"                           >> $GETFILE
+        echo "mdelete ftp.oke"                        >> $GETFILE
+        echo "bye"                                    >> $GETFILE
+
+
+        ftp -v -d ftp.tnt < $GETFILE  > $TMPLOGFILE &
+         ######################################
+         # Controle of het FTP commando nog draait, na 1000 sec doorgaan en huidige killen.
+         ######################################
+          a=1
+         while [ $a -le 1000 ]
+           do
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt" |grep -v grep `
+             if  [ -n "$FTPACTIEF" ]
+              then
+               echo $i "FTP is actief dus wachten max 1000 seconden"
+               echo $a
+               a=`expr $a + 1`
+               sleep 1
+              else
+               echo $i "FTP is klaar"
+               echo $a
+               a=`expr $a + 1000`
+               sleep 1
+             fi
+         done
+
+             FTPACTIEF=`ps -ef |grep "ftp -v -d ftp.tnt"  |grep -v grep | awk '{print $1}' `
+             if  [ -n "$FTPACTIEF" ]
+              then
+              echo "FTP van bestand " $i "is niet gelukt, process afbreken." >> $LOGFILE
+              kill $FTPACTIEF
+             fi
+
+        ######################################
+        # controle of FTP goed is gegaan.
+        ######################################
+        datum=`date +"%y.%m.%d %H:%M:%S - "`
+
+        if [ -e in/ftp.oke ]
+          then
+               cat $TMPLOGFILE >> $LOGFILE
+               echo "$datum       TNT file $i via FTP opgehaald en bij TNT naar archive verplaatst" >> $LOGFILE
+               a=`expr $a + 5`
+               rm  in/ftp.oke
+          else
+               cat $TMPLOGFILE >> $LOGFILE
+               echo "$datum       TNT file $i ftp niet gelukt, nogmaals proberen (60 sec) poging $a" >> $LOGFILE
+               a=`expr $a + 1`
+               #sleep 60
+               sleep 1
+        fi
+    done
+done
+
+echo "$datum    einde overzetten bestanden via $SCRIPTNAAM" >> $LOGFILE
+
+# ------------------------------------------------------------------------
+# Rommel opruimen en einde overzetten internet bestanden.
+# ------------------------------------------------------------------------
+
+# verwijderen save bestanden ouder dan 10 dagen
+#find $WORKDIR/TNT/out/save/*.xml -mtime +10 -exec rm -f {} \;
+
+echo "$datum EINDE $SCRIPTNAAM" >> $LOGFILE
+
+
